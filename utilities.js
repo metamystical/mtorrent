@@ -1,6 +1,8 @@
 module.exports = {
   isHex: (str, len) => { return (len ? str.length === len : true) && /^[0-9a-fA-F]+$/.test(str) },
 
+  isPort: (port) => { return port > 1023 && port < 65536 },
+  
   getPieceLength: (spot) => { return spot.reduce((a, spot) => { return(a + spot.length) }, 0) },
 
   setBitfield: (bits, inx) => {
@@ -31,7 +33,7 @@ module.exports = {
   },
 
   report: (mess, err) => {
-    if (err) mess = 'error => ' + mess
+    if (err) mess = 'error: ' + mess
     console.log('%s: %s', timeStr(Date.now()), mess)
     if (err) process.exit(1)
     function timeStr (time) {

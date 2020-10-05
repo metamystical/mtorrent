@@ -13,46 +13,51 @@ const MY_ID = '-MT0100-MTorrent----'  // my peer id (20 char)
 function Torrent (infoHash, peerPool, decodedMetadata, localPort) {
   this.infoHash = infoHash
   this.peerPool = peerPool
+  this.desiredNumPeers = Math.min(MAX_CONCURRENT_PEERS, this.peerPool.length)
   this.decodedMetadata = decodedMetadata
   this.localPort = localPort
   this.name // if defined, metadata considered valid
   this.numPieces
+  this.pieces
   this.pendingPieces = []
   this.myBitfield
   this.myId = Buffer.from(MY_ID); for (let i = 8; i < 20; i++) this.myId[i] = Math.floor(Math.random() * 256)
   this.activePeers = {}
+  if (decodedMetadata) this.processMetadata()
 }
 
 Torrent.prototype.start = function () {
-  if (this.decodedMetadata) this.processMetadata()
-  if (this.pendingPieces.length > 0) { // leecher
-    let desiredNumPeers = Math.min(MAX_CONCURRENT_PEERS, this.peerPool.length)
-    while (desiredNumPeers-- > 0) this.addPeer()
-  }
-  else { // seeder
+  if (this.name && this.pendingPieces.length === 0) { // seeder
+    util.report('seeding => ' + this.name.toString())
     const server = new tcp.Server()
     server.listen(this.localPort, () => { util.report('listening on port ' + this.localPort) })
-    server.on('connection', (socket) => { this.addPeer(socket) })
+    server.on('connection', (socket) => {
+      let addr = socket.remoteAddress
+      if (addr.slice(0, 7) === '::ffff:') addr = addr.slice(7)
+      else if(socket.remoteFamily == 'IPv6') util.report('peer has IPv6', true)
+      addPeer(util.makeLoc(addr, socket.remotePort), socket)
+    })
+  }
+  else { // leecher
+    while (this.desiredNumPeers-- > 0) {
+      const peer = this.peerPool.shift()
+      if (!peer) break
+      const socket = new tcp.Socket()
+      const { address, port } = util.unmakeLoc(Buffer.from(peer, 'hex'))
+      socket.connect({ host: address, port: port, localPort: this.localPort })
+      addPeer(peer, socket)
+    }
+    this.desiredNumPeers = 1
+  }
+  function addPeer (peer, socket) {
+    const pr = peer.toString('hex')
+    if (this.activePeers[pr] !== undefined) return
+    this.activePeers[pr] = new Peer(this, peer)
+    this.activePeers[pr].socket(socket)
   }
 }
 
 Torrent.prototype.abort = function (reason) { util.report(reason, true) }
-
-Torrent.prototype.addPeer = function (socket) {
-  let peer
-  if (socket) {
-    let addr = socket.remoteAddress
-    if (addr.slice(0, 7) === '::ffff:') addr = addr.slice(7)
-    else if(socket.remoteFamily == 'IPv6') util.report('peer has IPv6', true)
-    peer = util.makeLoc(addr, socket.remotePort)
-  }
-  else peer = this.peerPool.shift()
-  if (!peer) return
-  const pr = peer.toString('hex')
-  if (this.activePeers[pr] !== undefined) return
-  this.activePeers[pr] = new Peer(this, peer, this.localPort)
-  this.activePeers[pr].socket(socket)
-}
 
 Torrent.prototype.onPiece = function (inx) {
   util.setBitfield(this.myBitfield, inx)
@@ -63,7 +68,7 @@ Torrent.prototype.onPiece = function (inx) {
 Torrent.prototype.onFinish = function (peer) {
   const pr = peer.toString('hex')
   delete this.activePeers[pr]
-  if (this.pendingPieces.length && this.peerPool.length) setImmediate(this.addPeer.bind(this))
+  if (this.pendingPieces.length && this.peerPool.length) setImmediate(this.start.bind(this))
   else if (!Object.keys(this.activePeers).length) {
     util.report('total downloaded => ' + Math.floor(100 * (1 - this.pendingPieces.length / this.numPieces)) + '%')
   }
@@ -101,8 +106,6 @@ Torrent.prototype.processMetadata = function (truncate) { // truncate == restart
 
   const valid = this.numPieces - this.pendingPieces.length
   util.report('previously downloaded => ' + Math.floor(100 * valid / this.numPieces) + '%')
-  if (valid === this.numPieces) util.report('seeding => ' + this.name.toString())
-  else util.report('downloading => ' + this.name.toString())
 
   function createDirectories () { // redefines global variables 'length' and 'files'
     if (length) files = [{ length: length, path: this.name }] // single file
@@ -149,11 +152,11 @@ Torrent.prototype.processMetadata = function (truncate) { // truncate == restart
         pStart += writeLength
       }
     })
-    pieces = pcs
+    this.pieces = pcs
   }
 
   function checkPieces () { // check for previously downloaded pieces, set pendingPieces and myBitfield
-    pieces.forEach((piece) => {
+    this.pieces.forEach((piece) => {
       if (truncate || !nameExists) { this.pendingPieces.push(piece); return }
       const pieceData = Buffer.alloc(util.getPieceLength(piece.spot))
       piece.spot.forEach((spot) => { fs.readSync(spot.fd, pieceData, spot.pStart, spot.length, spot.fStart) })

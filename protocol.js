@@ -174,25 +174,26 @@ const proto = {
   },
 
   sendMetaRequest: (peerMetaId, metaPiece) => {
-    return proto.extMessage(peerMetaId, { m: { msg_type: 0, piece: metaPiece } })
+    return proto.extMessage(peerMetaId, { msg_type: 0, piece: metaPiece })
   },
 
   sendMetaData: (peerMetaId, metaPiece, metaInfoSize, metaData) => {
-    return proto.extMessage(peerMetaId, {m: { msg_type: 1, piece: metaPiece, total_size: metaInfoSize }, metaData })
+    return proto.extMessage(peerMetaId, { msg_type: 1, piece: metaPiece, total_size: metaInfoSize }, metaData)
   },
 
   sendMetaReject: (peerMetaId, metaPiece) => {
-    return proto.extMessage(peerMetaId, { m: { msg_type: 2, piece: metaPiece } })
+    return proto.extMessage(peerMetaId, { msg_type: 2, piece: metaPiece })
   },
   
   extMessage: (id, mess, data) => {
+    if (!data) data = Buffer.alloc(0) 
     mess = encode(mess)
     let buff = Buffer.alloc(mess.length + 6)
-    buff.writeInt32BE(mess.length + 2, 0)
+    buff.writeInt32BE(data.length + mess.length + 2, 0)
     buff[4] = 20
     buff[5] = id
     mess.copy(buff, 6)
-    if (data) buff = Buffer.concat(buff, data)
+    buff = Buffer.concat([buff, data])
     return buff
   }
 }
