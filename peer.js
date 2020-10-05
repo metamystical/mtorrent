@@ -34,6 +34,11 @@ Peer.prototype.start = function () {
       this.shook = true
       this.write(proto.sendHandshake(this.infoHash, this.myId))
       this.write(proto.sendMetaHandshake(this.infoRaw.length))
+      this.write(proto.sendBitfield(this.myBitfield))
+      this.write(proto.sendPort(this.dhtPort))
+      this.write(proto.sendInterested(false))
+      this.write(proto.sendChoke(false))
+      this.failTimer = setTimeout(this.abort.bind(this), BLOCK_TIMER, 'block timeout')
     }
     this.data = proto.getMessage(this.data, this)
     if(!Buffer.isBuffer(this.data)) this.abort(this.data)
@@ -86,10 +91,6 @@ Peer.prototype.onMessage = function (cmd, args) {
         if (end > len) end = len
         this.write(proto.sendMetaData(this.peerMetaId, this.metaPiece++, len, this.infoRaw.slice(start, end)))
         if (this.metaPiece === Math.ceil(len / META_PIECE_SIZE)) {
-          this.write(proto.sendBitfield(this.myBitfield))
-          this.write(proto.sendPort(this.dhtPort))
-          this.write(proto.sendChoke(false))
-          this.failTimer = setTimeout(this.abort.bind(this), BLOCK_TIMER, 'block timeout')
         }
       }
       else if (args.metaMsgType === 1) { // incoming data

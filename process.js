@@ -8,6 +8,7 @@ module.exports = function (metadata, truncate) { // truncate torrent files if th
   ret.name = info['name']; let files = info['files']; let length = info['length']
   const pieces = info['pieces']; const pieceLength = info['piece length']
   if (!ret.name || !pieces || !pieceLength || !length === !files) throw 'invalid metadata'
+  if (!crypto.createHash('sha1').update(metadata.infoRaw).digest().equals(metadata.infoHash)) throw 'invalid infohash'
   const nameExists = fs.existsSync(Buffer.from(ret.name))
   const numPieces = pieces.length / 20
   ret.myBitfield = Buffer.alloc(Math.ceil(numPieces / 8)).fill(0)
