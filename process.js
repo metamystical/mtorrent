@@ -3,33 +3,30 @@ const util = require('./utilities')
 const crypto = require('crypto')
 
 module.exports = function (metadata, truncate) { // truncate torrent files if they already exist
-  const ret = {}
   const info = metadata.info
-  ret.name = info['name']; let files = info['files']; let length = info['length']
+  metadata.name = info['name']; let files = info['files']; let length = info['length']
   const pieces = info['pieces']; const pieceLength = info['piece length']
-  if (!ret.name || !pieces || !pieceLength || !length === !files) throw 'invalid metadata'
+  if (!metadata.name || !pieces || !pieceLength || !length === !files) throw 'invalid metadata'
   if (!crypto.createHash('sha1').update(metadata.infoRaw).digest().equals(metadata.infoHash)) throw 'invalid infohash'
-  const nameExists = fs.existsSync(Buffer.from(ret.name))
+  const nameExists = fs.existsSync(Buffer.from(metadata.name))
   const numPieces = pieces.length / 20
-  ret.myBitfield = Buffer.alloc(Math.ceil(numPieces / 8)).fill(0)
-  ret.pendingPieces = []
+  metadata.myBitfield = Buffer.alloc(Math.ceil(numPieces / 8)).fill(0)
+  metadata.pendingPieces = []
 
   try { createDirectories() } catch (err) { throw 'failed to create torrent directories' }
   if (Math.ceil(length / pieceLength) !== numPieces) throw 'pieces mismatch'
   try { mapPieces() } catch (err) { throw 'failed to open torrent files' }
   try { checkPieces() } catch (err) { throw 'failed to read torrent files' }
 
-  return (ret)
-
   function createDirectories () { // redefines global variables 'length' and 'files'
-    if (length) files = [{ length: length, path: ret.name }] // single file
+    if (length) files = [{ length: length, path: metadata.name }] // single file
     else { // condense path array into single buffer and create directory tree
       length = 0
       const unique = []
       const slash = Buffer.from('/')
       files.forEach((file) => {
         length += file.length
-        let path = [Buffer.from(ret.name), slash] // root directory
+        let path = [Buffer.from(metadata.name), slash] // root directory
         const filename = file.path.pop()
         while (file.path.length > 0) path.push(file.path.shift(), slash)
         path = Buffer.concat(path)
@@ -66,16 +63,16 @@ module.exports = function (metadata, truncate) { // truncate torrent files if th
         pStart += writeLength
       }
     })
-    ret.pieces = pcs
+    metadata.pieces = pcs
   }
 
   function checkPieces () { // check for previously downloaded pieces, set pendingPieces and myBitfield
-    ret.pieces.forEach((piece, index) => {
-      if (truncate || !nameExists) { ret.pendingPieces.push(index); return }
+    metadata.pieces.forEach((piece, index) => {
+      if (truncate || !nameExists) { metadata.pendingPieces.push(index); return }
       const pieceData = Buffer.alloc(util.getPieceLength(piece.spot))
       piece.spot.forEach((spot) => { fs.readSync(spot.fd, pieceData, spot.pStart, spot.length, spot.fStart) })
-      if (crypto.createHash('sha1').update(pieceData).digest().equals(piece.sha)) util.setBitfield(ret.myBitfield, piece.index)
-      else ret.pendingPieces.push(index)
+      if (crypto.createHash('sha1').update(pieceData).digest().equals(piece.sha)) util.setBitfield(metadata.myBitfield, piece.index)
+      else metadata.pendingPieces.push(index)
     })
   }
 }

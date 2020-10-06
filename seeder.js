@@ -34,25 +34,22 @@ util.report('metadata => reading ' + argv[2])
 let metadata
 try {
   metadata = decode(fs.readFileSync(argv[2]))
-  if (!metadata.info || !metadata.infoHash) throw ''
+  if (!metadata || !metadata.info || !metadata.infoHash) throw 'invalid torrent file'
 } catch (err) { util.report('metadata => ' + err, true) }
 util.report('metadata => infoHash: ' + metadata.infoHash.toString('hex'))
 util.report('metadata => processing ' + argv[2])
-let meta
-try { meta = processMeta(metadata) }
+try { processMeta(metadata) }
 catch (err) { util.report('metadata => ' + err, true) }
-if (meta.pendingPieces.length !== 0) util.report('metadata => invalid or incomplete torrent file(s)', true)
-meta.infoHash = metadata.infoHash
-meta.infoRaw = metadata.infoRaw
+if (metadata.pendingPieces.length !== 0) util.report('metadata => invalid or incomplete torrent file(s)', true)
 
 util.report('starting server')
 new Net.Server()
 .listen(torPort, () => {
   util.report('listening on TCP port ' + torPort)
-//  announce()
+  announce()
 })
 .on('connection', (socket) => {
-  const peer = new Peer(dhtPort, myId, meta, socket)
+  const peer = new Peer(dhtPort, myId, metadata, socket)
   socket.once('end', () => { console.log('remote client ended connection') }) // triggers automatic close
   socket.once('error', (err) => { console.log('socket error: ' + err) }) // triggers automatic close
   socket.once('close', (hadErr) => {
@@ -62,16 +59,16 @@ new Net.Server()
   })
   peer.start()
 })
-util.report('seeding ' + meta.name.toString())
+util.report('seeding ' + metadata.name.toString())
 
 client.init(dhtPort)
 
 function announceResults (res) {
   if (!res) util.report('DHT error', true)
-  util.report('torrent announced to ' + res.numAnnounced + ' peers')
+  util.report('torrent announced to ' + res.numStored + ' peers')
   setTimeout(announce, ANNOUNCE_TIMER, announceResults)
 }
 
 function announce () {
-  client.announcePeer(meta.infoHash, announceResults)
+  client.announcePeer(metadata.infoHash, torPort, 0, announceResults)
 }
